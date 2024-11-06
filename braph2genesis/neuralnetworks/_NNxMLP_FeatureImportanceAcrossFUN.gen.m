@@ -115,10 +115,11 @@ NOTES (metadata, string) are some specific notes about the feature importance an
 COMP_FEATURE_INDICES (result, cell) provides the indices of brain regions, represented as a cell array containing sets of feature indices, such as {[1], [2], [3], ...}.
 %%%% ¡calculate!
 
-% yuxin do it from here
+% yuxin 
+% Instruction: the value of this one should be the brain node index, such as {[1], [2],
+% [3], ...} for the momemnt.
 comp_feature_indices = [];
 value = comp_feature_indices;
-% yuxin do it until here
 
 %%% ¡prop!
 D_SHUFFLED (query, item) generates a shuffled version of the dataset where the time series of one brain region is replaced with random values drawn from a distribution with the same mean and standard deviation as the orginal ones.
@@ -126,12 +127,15 @@ D_SHUFFLED (query, item) generates a shuffled version of the dataset where the t
 'NNDataset'
 %%%% ¡calculate!
 
-% yuxin do it from here
+% yuxin
+% Instruction: D_SHUFFLED will consist of NNDataPointMLP_Shuffled 
+% with inputs being adjacency matrices derived from correlations 
+% between the time series of nodes, with one of the node time series shuffled.
 if isempty(varargin)
     value = NNDataset();
     return
 end
-comp_feature_combination = varargin{1}; % the composite indexes to be shuffled
+comp_feature_combination = varargin{1}; % the composite indexes 
 
 d = nnfi.get('D');
 dp_it_list = d.get('DP_DICT').get('IT_LIST');

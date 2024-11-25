@@ -145,6 +145,7 @@ NNRegressorMLP_CrossValidationPF_Scatter,1
 NNRegressorMLP_Evaluator,1
 NNRegressorMLP_EvaluatorPF_Scatter,1
 NNxMLP_FeatureImportance,1
+NNxMLP_FeatureImportanceAcrossFUN,1
 NNxMLP_FeatureImportanceAcrossMeasures,1
 NNxMLP_FeatureImportanceAcrossMeasures_CV,1
 NNxMLP_FeatureImportanceBSPF_xSPP_Layer,1

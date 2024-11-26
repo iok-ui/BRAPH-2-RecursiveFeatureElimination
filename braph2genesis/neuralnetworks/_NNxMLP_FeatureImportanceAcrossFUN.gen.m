@@ -118,8 +118,9 @@ COMP_FEATURE_INDICES (result, cell) provides the indices of brain regions, repre
 % yuxin 
 % Instruction: the value of this one should be the brain node index, such as {[1], [2],
 % [3], ...} for the momemnt.
-comp_feature_indices = [];
-value = comp_feature_indices;
+ba = nnfiam.get('BA');
+num_brain_region = ba.get('BR_DICT').get('LENGTH');
+value = num2cell(1:num_brain_region);
 
 %%% ¡prop!
 D_SHUFFLED (query, item) generates a shuffled version of the dataset where the time series of one brain region is replaced with random values drawn from a distribution with the same mean and standard deviation as the orginal ones.
@@ -129,50 +130,83 @@ D_SHUFFLED (query, item) generates a shuffled version of the dataset where the t
 
 % yuxin
 % Instruction: D_SHUFFLED will consist of NNDataPointMLP_Shuffled 
-% with inputs being adjacency matrices derived from correlations 
+% with inputs being adjacency matrices derived from correlations
 % between the time series of nodes, with one of the node time series shuffled.
 if isempty(varargin)
     value = NNDataset();
     return
 end
-comp_feature_combination = varargin{1}; % the composite indexes 
+comp_feature_combination = varargin{1}; % the composite indexes
 
-d = nnfi.get('D');
-dp_it_list = d.get('DP_DICT').get('IT_LIST');
-P = nnfi.get('P');
+gr_fun_list = nnfiam.get('GR_FUN_LIST');
 
-inputs = cell2mat(nnfi.memorize('BASELINE_INPUTS'));
-shuffled_inputs = inputs;
-for i = 1:length(comp_feature_combination)
-    feature_idx = comp_feature_combination(i);
-    permuted_value = squeeze(normrnd(mean(inputs(:, feature_idx)), std(inputs(:, feature_idx)), squeeze(size(inputs(:, feature_idx)))));
-    shuffled_inputs(:, feature_idx) = permuted_value;
+% combine all grs to single gr
+comb_sub_list = {};
+for i = 1:length(gr_fun_list)
+    current_gr = gr_fun_list{i};
+    sub_list = current_gr.get('SUB_DICT').get('IT_LIST');
+    comb_sub_list = [comb_sub_list sub_list];
 end
 
-for i = 1:length(dp_it_list)
-    dp = dp_it_list{i};
-    shuffled_input = {shuffled_inputs(i, :)};
-    shuffled_dp_list{i} = NNDataPointMLP_Shuffled('SHUFFLED_INPUT', shuffled_input);
+% shuffle the time series
+for i = 1:length(comb_sub_list)
+    current_subj = comb_sub_list{i};
+    fun = current_subj.get('FUN'); % time_length x brain_regions
+    for j = 1:length(comp_feature_combination)
+        br_idx = comp_feature_combination(j);
+        permuted_value = squeeze(normrnd(mean(fun(:, br_idx)), std(fun(:, br_idx)), squeeze(size(fun(:, br_idx)))));
+        fun(:, br_idx) = permuted_value;
+    end
+    permuted_sub_list{i} = SubjectFUN('ID', current_subj.get('ID'), ...
+        'BA', current_subj.get('BA'), ...
+        'FUN', fun);
 end
+
+permuted_sub_dict = IndexedDictionary(...
+    'IT_CLASS', 'SubjectFUN', ...
+    'IT_LIST', permuted_sub_list ...
+    );
+
+permuted_gr = Group('SUB_DICT', permuted_sub_dict);
+
+% get analyzeEnsemble
+ae_template = nnfiam.get('AE_TEMPLATE');
+ae = eval([ae_template.getClass() '(''TEMPLATE'', ae_template);']);
+ae.set('GR', permuted_gr);
+ae.memorize('G_DICT')
+
+shuffled_dp_list = cellfun(@(x) NNDataPointMLP_Shuffled( ...
+    'ID', x.get('ID'), ...
+    'SHUFFLED_INPUT', {transpose(nnfiam.get('FLATTEN_CELL', x.get('A')))}), ...
+    ae.get('G_DICT').get('IT_LIST'), ...
+    'UniformOutput', false);
 
 shuffled_dp_dict = IndexedDictionary(...
-        'IT_CLASS', 'NNDataPointMLP_Shuffled', ...
-        'IT_LIST', shuffled_dp_list ...
-        );
+    'IT_CLASS', 'NNDataPointMLP_Shuffled', ...
+    'IT_LIST', shuffled_dp_list ...
+    );
 
 value = NNDataset( ...
     'DP_CLASS', 'NNDataPointMLP_Shuffled', ...
     'DP_DICT', shuffled_dp_dict ...
     );
 
-% yuxin do it until here
-
 %% ¡props!
 
 %%% ¡prop!
-GR_FUN_LIST (data, item) is the list of FUN group, which also defines the subject class SubjectFUN.
-%%%% ¡default!
-Group('SUB_CLASS', 'SubjectFUN')
+BA (parameter, item) is the brain atlas.
+%%%% ¡settings!
+'BrainAtlas'
+
+%%% ¡prop!
+GR_FUN_LIST (data, itemlist) is the list of FUN group, which also defines the subject class SubjectFUN.
+%%%% ¡settings!
+'Group'
+
+%%% ¡prop!
+AE_TEMPLATE (data, item) is the list of FUN group, which also defines the subject class SubjectFUN.
+%%%% ¡settings!
+'AnalyzeEnsemble'
 
 %% ¡tests!
 
@@ -190,6 +224,8 @@ gui.get('CLOSE')
 %%%% ¡name!
 Sanity check
 %%%% ¡code!
+create_data_NN_CLA_FUN_XLS() % only creates files if the example folder doesn't already exist
+
 % Load BrainAtlas
 im_ba = ImporterBrainAtlasXLS( ...
     'FILE', [fileparts(which('NNDataPoint_FUN_CLA')) filesep 'Example data NN CLA FUN XLS' filesep 'atlas.xlsx'], ...
@@ -271,15 +307,16 @@ d2 = NNDataset( ...
 d_split1 = NNDatasetSplit('D', d1, 'SPLIT', {0.7, 0.3});
 d_split2 = NNDatasetSplit('D', d2, 'SPLIT', {0.7, 0.3});
 
-d_training = NNDatasetCombine('D_LIST', {d_split1.get('D_LIST_IT', 1), d_split2.get('D_LIST_IT', 1)).get('D');
-d_test = NNDatasetCombine('D_LIST', {d_split1.get('D_LIST_IT', 2), d_split2.get('D_LIST_IT', 2)).get('D');
+d_training = NNDatasetCombine('D_LIST', {d_split1.get('D_LIST_IT', 1), d_split2.get('D_LIST_IT', 1)}).get('D');
+d_test = NNDatasetCombine('D_LIST', {d_split1.get('D_LIST_IT', 2), d_split2.get('D_LIST_IT', 2)}).get('D');
 
 % Train a NN
 nn = NNClassifierMLP('D', d_training, 'LAYERS', [20 20]);
 nn.get('TRAIN');
 
 % Evaluate the feature importance
-fi = NNxMLP_FeatureImportanceAcrossFUN('D', d_test, 'NN', nn, 'GR_FUN_LIST', {gr1, gr2}, 'P', 5, 'APPLY_BONFERRONI', true, 'APPLY_CONFIDENCE_INTERVALS', true);
+d_comb = NNDatasetCombine('D_LIST', {d1, d2}).get('D');
+fi = NNxMLP_FeatureImportanceAcrossFUN('BA', ba, 'AE_TEMPLATE', a_WU1, 'D', d_comb, 'NN', nn, 'GR_FUN_LIST', {gr1, gr2}, 'P', 5, 'APPLY_BONFERRONI', true, 'APPLY_CONFIDENCE_INTERVALS', true);
 fi_score = fi.get('FEATURE_IMPORTANCE');
 num_br = ba.get('BR_DICT').get('LENGTH');
 
@@ -287,3 +324,10 @@ assert(isequal(length(cell2mat(fi_score)), num_br), ...
 	        [BRAPH2.STR ':NNxMLP_FeatureImportanceAcrossFUN:' BRAPH2.FAIL_TEST], ...
 	        'NNxMLP_FeatureImportanceAcrossFUN does not have the feature importance score array as intended.' ...
 	        )
+
+% Test GUI
+gui = GUIElement('PE', fi, 'CLOSEREQ', false);
+gui.get('DRAW')
+gui.get('SHOW')
+
+gui.get('CLOSE')
